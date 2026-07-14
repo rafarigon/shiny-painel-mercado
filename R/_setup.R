@@ -239,11 +239,20 @@ load_dataset <- function(name, force = FALSE) {
   })
 
   # A transient fetch failure (e.g. BCB API hiccup) yields an empty frame.
-  # Never persist it: fall back to a previous cache if one exists, otherwise
-  # return the empty frame WITHOUT caching so the next load retries instead of
-  # poisoning the cache with permanent emptiness.
+  # Never persist it: fall back to a previous cache — or the committed seed —
+  # if one exists, otherwise return the empty frame WITHOUT caching so the
+  # next load retries instead of poisoning the cache with permanent emptiness.
+  # The seed fallback also lets tools/prewarm.R succeed on CI runners whose
+  # IPs the BCB API rejects: the dataset keeps its last committed rows.
   if (nrow(out) == 0) {
     if (file.exists(path)) return(readRDS(path))
+    if (file.exists(seed)) {
+      warning(
+        "Fetch for '", name, "' returned no rows; reusing the committed ",
+        "seed from data-cache/."
+      )
+      return(readRDS(seed))
+    }
     warning(
       "Fetch for '", name, "' returned no rows; not caching. ",
       "It will be retried on the next load."
