@@ -47,6 +47,26 @@ file.copy(
   overwrite = TRUE
 )
 
+# Posit Connect Cloud requires a manifest.json for git-backed publishes, and
+# its file checksums cover data-cache/, so regenerate it whenever the seed is
+# refreshed. The file list mirrors tools/deploy.R's bundle with data-cache/
+# standing in for .cache/. On CI the file is staged so the workflow's
+# data-cache commit step picks it up; locally it is just written to disk.
+manifest_files <- c(
+  "app.R", "styles.css", "_brand.yml", "renv.lock", ".Rprofile",
+  list.files("R", pattern = "\\.R$", full.names = TRUE),
+  list.files("data-cache", pattern = "\\.rds$", full.names = TRUE)
+)
+tryCatch({
+  rsconnect::writeManifest(appFiles = manifest_files)
+  if (identical(Sys.getenv("GITHUB_ACTIONS"), "true")) {
+    system("git add manifest.json")
+  }
+  message("manifest.json regenerated.")
+}, error = function(e) {
+  warning("Could not regenerate manifest.json: ", conditionMessage(e))
+})
+
 message(
   "\nCache seed ready in .cache/ and data-cache/. Next: commit & push ",
   "data-cache/ (Connect Cloud) or run tools/deploy.R (Posit Connect server)."
