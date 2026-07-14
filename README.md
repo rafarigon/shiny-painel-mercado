@@ -4,7 +4,7 @@
 [![Built with R](https://img.shields.io/badge/Built%20with-R-276DC3?logo=r&logoColor=white)](https://www.r-project.org/)
 [![Shiny](https://img.shields.io/badge/Shiny-bslib-447099?logo=rstudio&logoColor=white)](https://shiny.posit.co/)
 
-Interactive R Shiny dashboard for Brazilian residential real estate market indices — prices, credit, primary market, macro, and São Paulo housing indicators.
+Interactive R Shiny dashboard for Brazilian residential real estate market indices — prices, credit, primary market, macro, plus São Paulo and Curitiba regional indicators.
 
 **Live demo:** [viniciusoike-shiny-painel-mercado.share.connect.posit.cloud](https://viniciusoike-shiny-painel-mercado.share.connect.posit.cloud)
 
@@ -61,3 +61,4 @@ All data comes from [`realestatebr`](https://github.com/viniciusoike/realestateb
 | **Mercado** | Primary market launches, sales, supply, distratos, deliveries, VGV by segment (Abrainc) |
 | **Macro** | Selic, IPCA, IGP-M, INCC, real interest rate, debt burden, delinquency (BCB) |
 | **São Paulo** | Secovi-SP: launches vs. sales, VSO, supply, VGV, months of inventory, dormitório composition |
+| **Curitiba** | FipeZap and IGMI-R price benchmarks vs. Brazil; BCB Paraná financing: units by dormitório and type, appraisal values, PF credit volume, SFH rates |

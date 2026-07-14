@@ -58,4 +58,3 @@ data/
 
 # Posit Connect deployment artifacts
 .posit/
-manifest.json

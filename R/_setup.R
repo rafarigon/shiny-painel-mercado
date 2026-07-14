@@ -95,6 +95,21 @@ prep_rppi <- function(df) {
     dplyr::ungroup()
 }
 
+# Paraná slice of BCB's mercado imobiliário open data: state-level credit and
+# financed-unit series that power the Curitiba tab. Keeps only date +
+# series_info + value; series are picked by their full identifier (see
+# bcb_pr_pick()).
+prep_bcb_pr <- function(df) {
+  make_prep(
+    "bcb_realestate",
+    c("date", "series_info", "value", "abbrev_state")
+  )(df)
+  df |>
+    dplyr::filter(abbrev_state == "PR") |>
+    dplyr::transmute(date, series_info, value) |>
+    dplyr::arrange(date)
+}
+
 # Dataset registry ------------------------------------------------------------
 
 # App-level dataset names -> realestatebr (dataset, table) plus a prep
@@ -126,6 +141,10 @@ DATASETS <- list(
   secovi = list(
     dataset = "secovi", table = "all",
     prep = make_prep("secovi", c("date", "category", "variable", "value"))
+  ),
+  bcb_pr = list(
+    dataset = "bcb_realestate", table = "all",
+    prep = prep_bcb_pr
   ),
   # Selic meta (SGS 432), the one macro series realestatebr doesn't carry.
   # Fetched straight from BCB; degrades to an empty tibble if unreachable.
@@ -220,11 +239,20 @@ load_dataset <- function(name, force = FALSE) {
   })
 
   # A transient fetch failure (e.g. BCB API hiccup) yields an empty frame.
-  # Never persist it: fall back to a previous cache if one exists, otherwise
-  # return the empty frame WITHOUT caching so the next load retries instead of
-  # poisoning the cache with permanent emptiness.
+  # Never persist it: fall back to a previous cache — or the committed seed —
+  # if one exists, otherwise return the empty frame WITHOUT caching so the
+  # next load retries instead of poisoning the cache with permanent emptiness.
+  # The seed fallback also lets tools/prewarm.R succeed on CI runners whose
+  # IPs the BCB API rejects: the dataset keeps its last committed rows.
   if (nrow(out) == 0) {
     if (file.exists(path)) return(readRDS(path))
+    if (file.exists(seed)) {
+      warning(
+        "Fetch for '", name, "' returned no rows; reusing the committed ",
+        "seed from data-cache/."
+      )
+      return(readRDS(seed))
+    }
     warning(
       "Fetch for '", name, "' returned no rows; not caching. ",
       "It will be retried on the next load."
@@ -430,6 +458,99 @@ rooms_to_shares <- function(df, cols = names(SECOVI_ROOMS)) {
   out <- data.frame(year = df$year)
   out[present] <- round(sweep(m, 1, tot, "/") * 100, 1)
   out
+}
+
+# BCB-PR helpers (Curitiba) ----------------------------------------------------
+
+# Pull one BCB-PR series (by its full series_info identifier) as date + value,
+# sorted. Identifiers follow the cleaned realestatebr naming, where hyphenated
+# tokens (e.g. "home-equity") count as a single component.
+bcb_pr_pick <- function(df, info) {
+  df |>
+    dplyr::filter(series_info == !!info) |>
+    dplyr::arrange(date) |>
+    dplyr::select(date, value)
+}
+
+# Dormitório label -> BCB financed-units series (Paraná, monthly counts).
+# Ordered small-to-large so stacked bands and table columns read consistently.
+BCB_PR_DORMS <- c(
+  "1 dorm"  = "imoveis_dormitorio_1_pr",
+  "2 dorm"  = "imoveis_dormitorio_2_pr",
+  "3 dorm"  = "imoveis_dormitorio_3_pr",
+  "4+ dorm" = "imoveis_dormitorio_4_mais_pr"
+)
+
+# Credit lines that add up to total monthly PF credit contracted in PR (R$).
+BCB_PR_CREDIT_PF <- c(
+  "credito_contratacao_contratado_pf_sfh_pr",
+  "credito_contratacao_contratado_pf_fgts_pr",
+  "credito_contratacao_contratado_pf_livre_pr",
+  "credito_contratacao_contratado_pf_home-equity_pr",
+  "credito_contratacao_contratado_pf_comercial_pr"
+)
+
+# Wide date x tipo frame of monthly financed units (Casa | Apartamento).
+bcb_pr_tipo_wide <- function(df) {
+  dplyr::full_join(
+    dplyr::rename(bcb_pr_pick(df, "imoveis_tipo_casa_pr"), Casa = value),
+    dplyr::rename(
+      bcb_pr_pick(df, "imoveis_tipo_apartamento_pr"),
+      Apartamento = value
+    ),
+    by = "date"
+  ) |>
+    dplyr::arrange(date)
+}
+
+# Total units financed per month in PR (casa + apartamento; NA only when both
+# components are missing).
+bcb_pr_units_total <- function(df) {
+  wide <- bcb_pr_tipo_wide(df)
+  m <- as.matrix(wide[c("Casa", "Apartamento")])
+  value <- rowSums(m, na.rm = TRUE)
+  value[rowSums(!is.na(m)) == 0] <- NA_real_
+  data.frame(date = wide$date, value = value)
+}
+
+# Total monthly PF credit contracted in PR (R$ millions), summing the SFH,
+# FGTS, livre, home-equity and comercial lines.
+bcb_pr_credit_pf_total <- function(df) {
+  df |>
+    dplyr::filter(series_info %in% BCB_PR_CREDIT_PF) |>
+    dplyr::group_by(date) |>
+    dplyr::summarise(value = sum(value, na.rm = TRUE) / 1e6, .groups = "drop") |>
+    dplyr::arrange(date)
+}
+
+# 12-month rolling sum of financed units per dormitório, wide (for the stacked
+# area). Rolls each band on its own so partial leading windows stay NA.
+bcb_pr_rooms_units_12m <- function(df) {
+  cols <- lapply(names(BCB_PR_DORMS), function(lab) {
+    rolled <- roll_sum(bcb_pr_pick(df, BCB_PR_DORMS[[lab]]))
+    dplyr::rename(rolled, !!lab := value)
+  })
+  Reduce(function(a, b) dplyr::full_join(a, b, by = "date"), cols) |>
+    dplyr::arrange(date)
+}
+
+# Annual financed units per dormitório (year x band, wide). Only complete
+# years (12 monthly observations) are kept so partial years never skew
+# comparisons.
+bcb_pr_rooms_yearly <- function(df) {
+  parts <- lapply(names(BCB_PR_DORMS), function(lab) {
+    bcb_pr_pick(df, BCB_PR_DORMS[[lab]]) |>
+      dplyr::mutate(year = lubridate::year(date)) |>
+      dplyr::group_by(year) |>
+      dplyr::summarise(
+        n = sum(!is.na(value)),
+        value = sum(value, na.rm = TRUE),
+        .groups = "drop"
+      ) |>
+      dplyr::transmute(year, !!lab := ifelse(n == 12, value, NA_real_))
+  })
+  Reduce(function(a, b) dplyr::full_join(a, b, by = "year"), parts) |>
+    dplyr::arrange(year)
 }
 
 # BCB / ABRAINC helpers -------------------------------------------------------
