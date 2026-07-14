@@ -504,6 +504,106 @@ page_saopaulo <- shiny::tagList(
   )
 )
 
+page_curitiba <- shiny::tagList(
+  page_header(
+    "Curitiba",
+    "Preços em Curitiba e crédito imobiliário no Paraná — FipeZap, IGMI-R e BCB"
+  ),
+
+  shiny::div(
+    class = "filter-bar",
+    filter_group(
+      "Período",
+      style = "margin-left:auto;",
+      shiny::selectInput(
+        "cwb_period",
+        NULL,
+        choices = c("5 anos" = "5", "10 anos" = "10", "Máximo" = "0"),
+        selected = "10",
+        width = "110px"
+      )
+    )
+  ),
+
+  shiny::uiOutput("cwb_kpi_grid"),
+
+  bslib::layout_columns(
+    col_widths = c(6, 6),
+    chart_card(
+      "IGMI-R — Venda",
+      "acum. 12m % · Curitiba vs. Brasil",
+      output_id = "cwb_igmir_chart",
+      height = "260px"
+    ),
+    chart_card(
+      "FipeZap — Aluguel",
+      "acum. 12m % · Curitiba vs. Brasil",
+      output_id = "cwb_rent_chart",
+      height = "260px"
+    )
+  ),
+
+  bslib::layout_columns(
+    col_widths = c(6, 6),
+    trend_card_ui(
+      "cwb_units",
+      "Unidades Financiadas — Paraná",
+      "unidades/mês · BCB"
+    ),
+    trend_card_ui(
+      "cwb_credit",
+      "Crédito Contratado — PF (Paraná)",
+      "R$ milhões/mês · BCB"
+    )
+  ),
+  bslib::layout_columns(
+    col_widths = c(6, 6),
+    chart_card(
+      "Unidades Financiadas por Dormitório",
+      "unidades · soma 12m · PR",
+      output_id = "cwb_rooms_area",
+      height = "260px"
+    ),
+    chart_card(
+      "Casa vs. Apartamento",
+      "unidades/mês · tendência STL · PR",
+      output_id = "cwb_tipo_chart",
+      height = "260px"
+    )
+  ),
+  bslib::layout_columns(
+    col_widths = c(7, 5),
+    chart_card(
+      "Participação por Dormitório",
+      "% · financiamentos/ano · PR",
+      output_id = "cwb_rooms_share",
+      height = "300px"
+    ),
+    bslib::card(
+      full_screen = TRUE,
+      bslib::card_header(
+        class = "chart-card-header",
+        shiny::span("Financiamentos Anuais por Dormitório"),
+        shiny::span(class = "chart-tag", "unidades · soma anual · PR")
+      ),
+      bslib::card_body(class = "p-0", shiny::uiOutput("cwb_rooms_table"))
+    )
+  ),
+  bslib::layout_columns(
+    col_widths = c(6, 6),
+    trend_card_ui(
+      "cwb_valor",
+      "Valor do Imóvel Financiado — Paraná",
+      "R$ · avaliação mediana"
+    ),
+    trend_card_ui(
+      "cwb_taxa",
+      "Taxa de Juros — SFH (PF, Paraná)",
+      "% a.a."
+    )
+  )
+)
+
 page_sobre <- shiny::tagList(
   page_header("Sobre", "Sobre este painel e a EKIO"),
   shiny::div(
@@ -553,6 +653,14 @@ page_sobre <- shiny::tagList(
         paste0(
           "Dados detalhados do mercado paulistano: lançamentos, vendas, ",
           "VSO, estoque e composição por dormitório."
+        )
+      ),
+      about_card(
+        "BCB — Mercado Imobiliário (PR)",
+        paste0(
+          "Dados estaduais do Paraná para a aba Curitiba: unidades ",
+          "financiadas por dormitório e tipo, valor de avaliação, ",
+          "crédito contratado e taxas de juros."
         )
       ),
       about_card(
@@ -615,7 +723,8 @@ ekio_sidebar <- bslib::sidebar(
     ),
     ekio_nav_section(
       "Regional",
-      ekio_nav_item("saopaulo", "São Paulo", "◆")
+      ekio_nav_item("saopaulo", "São Paulo", "◆"),
+      ekio_nav_item("curitiba", "Curitiba", "◇")
     ),
     ekio_nav_section(
       NULL,
@@ -664,6 +773,7 @@ ui <- bslib::page_sidebar(
       bslib::nav_panel_hidden("mercado", page_mercado),
       bslib::nav_panel_hidden("macro", page_macro),
       bslib::nav_panel_hidden("saopaulo", page_saopaulo),
+      bslib::nav_panel_hidden("curitiba", page_curitiba),
       bslib::nav_panel_hidden("sobre", page_sobre)
     )
   ),
@@ -683,7 +793,8 @@ initial_data <- list(
   selic = load_dataset("bcb_selic", force = FALSE),
   sbpe = load_dataset("abecip_units", force = FALSE),
   secovi = load_dataset("secovi", force = FALSE),
-  abrainc = load_dataset("abrainc", force = FALSE)
+  abrainc = load_dataset("abrainc", force = FALSE),
+  bcb_pr = load_dataset("bcb_pr", force = FALSE)
 )
 
 # Server ----------------------------------------------------------------------
@@ -698,6 +809,7 @@ server <- function(input, output, session) {
   sbpe_units <- shiny::reactive(initial_data$sbpe)
   secovi_data <- shiny::reactive(initial_data$secovi)
   abrainc_data <- shiny::reactive(initial_data$abrainc)
+  bcb_pr_data <- shiny::reactive(initial_data$bcb_pr)
 
   splits <- shiny::reactive({
     split_rppi(rppi_data())
@@ -1423,6 +1535,285 @@ server <- function(input, output, session) {
       sp_window()
     )
   })
+
+  # Curitiba (FipeZap / IGMI-R / BCB-PR) ----
+
+  cwb_window <- shiny::reactive({
+    yrs <- as.numeric(input$cwb_period %||% "10")
+    if (is.na(yrs) || yrs == 0) {
+      return(NULL)
+    }
+    max(bcb_pr_data()$date, na.rm = TRUE) %m-% lubridate::years(yrs)
+  })
+
+  # Curitiba KPI grid ----
+
+  output$cwb_kpi_grid <- shiny::renderUI({
+    sp <- splits()
+    pr <- bcb_pr_data()
+
+    # Latest value and the value 12 months before it (for YoY deltas of
+    # monthly/rolling series). NA-safe: degrades to NA on short series.
+    last_vs_12m <- function(v) {
+      curr <- utils::tail(v[!is.na(v)], 1)
+      if (length(curr) == 0) curr <- NA_real_
+      last <- suppressWarnings(max(which(!is.na(v))))
+      prev <- if (
+        is.finite(last) && last - 12 >= 1 && !is.na(v[last - 12])
+      ) {
+        v[last - 12]
+      } else {
+        NA_real_
+      }
+      yoy <- if (!is.na(curr) && !is.na(prev) && prev != 0) {
+        (curr / prev - 1) * 100
+      } else {
+        NA_real_
+      }
+      list(curr = curr, yoy = yoy)
+    }
+    yoy_lbl <- function(yoy) {
+      if (is.na(yoy)) "—" else sub("\\.", ",", sprintf("%+.1f%%", yoy))
+    }
+    yoy_dir <- function(yoy) {
+      if (!is.na(yoy) && yoy >= 0) "up" else "down"
+    }
+
+    # IGMI-R Curitiba — 12m acum.
+    igmi_cwb <- sp$sale |>
+      dplyr::filter(
+        source == "IGMI-R",
+        name_muni == "Curitiba",
+        !is.na(acum12m)
+      ) |>
+      dplyr::arrange(date)
+    v_igmi_cwb <- utils::tail(igmi_cwb$acum12m, 2)
+    igmi_cwb_card <- kpi_card(
+      "IGMI-R — Curitiba",
+      fmt_pct_br(utils::tail(v_igmi_cwb, 1)),
+      pp_lbl(diff(v_igmi_cwb) * 100),
+      "12m acum.",
+      igmi_cwb$acum12m * 100,
+      color = "blue",
+      dir = pp_dir(diff(v_igmi_cwb))
+    )
+
+    # FipeZap Aluguel Curitiba — 12m acum.
+    rent_cwb <- sp$rent |>
+      dplyr::filter(
+        source == "FipeZap",
+        name_muni == "Curitiba",
+        !is.na(acum12m)
+      ) |>
+      dplyr::arrange(date)
+    v_rent_cwb <- utils::tail(rent_cwb$acum12m, 2)
+    rent_cwb_card <- kpi_card(
+      "FipeZap Aluguel — Curitiba",
+      fmt_pct_br(utils::tail(v_rent_cwb, 1)),
+      pp_lbl(diff(v_rent_cwb) * 100),
+      "12m acum.",
+      rent_cwb$acum12m * 100,
+      color = "green",
+      dir = pp_dir(diff(v_rent_cwb))
+    )
+
+    # Diferencial IGMI-R Curitiba − Brasil — spread in pp, delta vs. prior month.
+    igmi_br <- sp$sale |>
+      dplyr::filter(
+        source == "IGMI-R",
+        name_muni == "Brazil",
+        !is.na(acum12m)
+      ) |>
+      dplyr::arrange(date) |>
+      dplyr::transmute(date, br = acum12m)
+    diff_igmi <- dplyr::inner_join(
+      dplyr::transmute(igmi_cwb, date, cwb_val = acum12m),
+      igmi_br,
+      by = "date"
+    ) |>
+      dplyr::mutate(diff_pp = (cwb_val - br) * 100)
+    v_diff <- utils::tail(diff_igmi$diff_pp, 2)
+    diff_curr <- utils::tail(v_diff, 1)
+    diff_card <- kpi_card(
+      "Diferencial CWB − Brasil",
+      sub("\\.", ",", sprintf("%+.1f pp", diff_curr)),
+      pp_lbl(diff(v_diff)),
+      "IGMI-R venda",
+      diff_igmi$diff_pp,
+      color = "amber",
+      dir = pp_dir(diff(v_diff))
+    )
+
+    # Unidades financiadas PR — trailing 12m sum, YoY % delta.
+    units_roll <- roll_sum(bcb_pr_units_total(pr))
+    un <- last_vs_12m(units_roll$value)
+    units_card <- kpi_card(
+      "Unidades Financiadas — PR",
+      fmt_num_br(un$curr, 0),
+      yoy_lbl(un$yoy),
+      "soma 12m",
+      units_roll$value,
+      color = "teal",
+      dir = yoy_dir(un$yoy)
+    )
+
+    # Valor mediano de avaliação PR — latest month, YoY % delta.
+    valor <- bcb_pr_pick(pr, "imoveis_valor_avaliacao_pr")
+    va <- last_vs_12m(valor$value)
+    valor_card <- kpi_card(
+      "Valor do Imóvel — PR",
+      paste0("R$ ", fmt_num_br(va$curr / 1000, 0), " mil"),
+      yoy_lbl(va$yoy),
+      "avaliação mediana",
+      valor$value,
+      color = "purple",
+      dir = yoy_dir(va$yoy)
+    )
+
+    # Crédito contratado PF PR — trailing 12m sum (R$ bi), YoY % delta.
+    cred_roll <- roll_sum(bcb_pr_credit_pf_total(pr))
+    cr <- last_vs_12m(cred_roll$value)
+    cred_card <- kpi_card(
+      "Crédito PF — PR",
+      paste0("R$ ", fmt_num_br(cr$curr / 1000, 1), " bi"),
+      yoy_lbl(cr$yoy),
+      "soma 12m",
+      cred_roll$value,
+      color = "red",
+      dir = yoy_dir(cr$yoy)
+    )
+
+    shiny::div(
+      class = "kpi-grid",
+      igmi_cwb_card,
+      rent_cwb_card,
+      diff_card,
+      units_card,
+      valor_card,
+      cred_card
+    )
+  })
+
+  # IGMI-R Curitiba vs Brasil — acum. 12m comparison.
+  output$cwb_igmir_chart <- echarts4r::renderEcharts4r({
+    sale <- splits()$sale
+    cwb_line <- sale |>
+      dplyr::filter(
+        source == "IGMI-R",
+        name_muni == "Curitiba",
+        !is.na(acum12m)
+      ) |>
+      dplyr::transmute(date, Curitiba = round(acum12m * 100, 2))
+    br_line <- sale |>
+      dplyr::filter(
+        source == "IGMI-R",
+        name_muni == "Brazil",
+        !is.na(acum12m)
+      ) |>
+      dplyr::transmute(date, Brasil = round(acum12m * 100, 2))
+    wide <- dplyr::full_join(cwb_line, br_line, by = "date")
+    echart_wide_lines(
+      wide,
+      c("Curitiba", "Brasil"),
+      "Acum. 12m (%)",
+      cwb_window(),
+      zero_line = TRUE
+    )
+  })
+
+  # FipeZap aluguel Curitiba vs Brasil — acum. 12m comparison (IVAR has no
+  # Curitiba series, so the rent benchmark here is FipeZap).
+  output$cwb_rent_chart <- echarts4r::renderEcharts4r({
+    rent <- splits()$rent
+    cwb_line <- rent |>
+      dplyr::filter(
+        source == "FipeZap",
+        name_muni == "Curitiba",
+        !is.na(acum12m)
+      ) |>
+      dplyr::transmute(date, Curitiba = round(acum12m * 100, 2))
+    br_line <- rent |>
+      dplyr::filter(
+        source == "FipeZap",
+        name_muni == "Brazil",
+        !is.na(acum12m)
+      ) |>
+      dplyr::transmute(date, Brasil = round(acum12m * 100, 2))
+    wide <- dplyr::full_join(cwb_line, br_line, by = "date")
+    echart_wide_lines(
+      wide,
+      c("Curitiba", "Brasil"),
+      "Acum. 12m (%)",
+      cwb_window(),
+      zero_line = TRUE
+    )
+  })
+
+  trend_card_server(
+    "cwb_units",
+    shiny::reactive(bcb_pr_units_total(bcb_pr_data())),
+    "Unidades",
+    "Unidades/mês",
+    cwb_window
+  )
+  trend_card_server(
+    "cwb_credit",
+    shiny::reactive(bcb_pr_credit_pf_total(bcb_pr_data())),
+    "R$ milhões",
+    "Volume/mês",
+    cwb_window
+  )
+
+  cwb_rooms <- shiny::reactive(names(BCB_PR_DORMS))
+
+  output$cwb_rooms_area <- echarts4r::renderEcharts4r({
+    echart_stacked_area(
+      bcb_pr_rooms_units_12m(bcb_pr_data()),
+      cwb_rooms(),
+      "Unidades",
+      cwb_window()
+    )
+  })
+  output$cwb_tipo_chart <- echarts4r::renderEcharts4r({
+    echart_wide_trends(
+      bcb_pr_tipo_wide(bcb_pr_data()),
+      c("Casa", "Apartamento"),
+      "Unidades · tendência",
+      cwb_window()
+    )
+  })
+  output$cwb_rooms_share <- echarts4r::renderEcharts4r({
+    yearly <- bcb_pr_rooms_yearly(bcb_pr_data())
+    # Honor the Período handle: the bar chart has no datazoom, so filter years.
+    w <- cwb_window()
+    if (!is.null(w)) {
+      yearly <- dplyr::filter(yearly, year >= lubridate::year(w))
+    }
+    echart_share_bars(rooms_to_shares(yearly, cwb_rooms()), cwb_rooms())
+  })
+  output$cwb_rooms_table <- shiny::renderUI({
+    secovi_rooms_table(
+      bcb_pr_rooms_yearly(bcb_pr_data()),
+      cols = names(BCB_PR_DORMS)
+    )
+  })
+
+  trend_card_server(
+    "cwb_valor",
+    shiny::reactive(bcb_pr_pick(bcb_pr_data(), "imoveis_valor_avaliacao_pr")),
+    "R$",
+    "Mensal",
+    cwb_window
+  )
+  trend_card_server(
+    "cwb_taxa",
+    shiny::reactive(
+      bcb_pr_pick(bcb_pr_data(), "credito_contratacao_taxa_pf_sfh_pr")
+    ),
+    "% a.a.",
+    "Taxa",
+    cwb_window
+  )
 
   # Crédito (Abecip / BCB) ----
 

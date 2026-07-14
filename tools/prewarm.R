@@ -17,7 +17,7 @@ source(here::here("R", "utils.R"))
 source(here::here("R", "_setup.R"))
 
 datasets <- c("rppi", "bcb_series", "bcb_selic",
-              "abecip_units", "secovi", "abrainc")
+              "abecip_units", "secovi", "abrainc", "bcb_pr")
 
 results <- vapply(datasets, function(name) {
   tryCatch({
