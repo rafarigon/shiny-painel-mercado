@@ -3002,7 +3002,7 @@
       "checksum": "96770cd5c104f1196c081578466a951d"
     },
     ".Rprofile": {
-      "checksum": "53ed27dff9243b9b8d99f79e58a6c87e"
+      "checksum": "aa544d0324a721bf7eb9191da8e1a38a"
     },
     "app.R": {
       "checksum": "f6dc9e3ecfcbb63b7d20fb995bfe01c6"
@@ -3011,25 +3011,25 @@
       "checksum": "990ab3df5b467da298908c56dd640d9a"
     },
     "data-cache/abecip_units.rds": {
-      "checksum": "77414aa11f736673fe7a6d4717d450fe"
+      "checksum": "bf199d0da66176d261bf5c7e04bddc4d"
     },
     "data-cache/abrainc.rds": {
-      "checksum": "5f0d007f483ed37f0fbc14d0503869d7"
+      "checksum": "1789164f0a7d2315267290cace9f4e8d"
     },
     "data-cache/bcb_pr.rds": {
-      "checksum": "d664a71550d9aadcb78b999f0f66f193"
+      "checksum": "9706ed6ea07532b967137ac047b24063"
     },
     "data-cache/bcb_selic.rds": {
       "checksum": "e837ab58a329674295e93f89181ac12d"
     },
     "data-cache/bcb_series.rds": {
-      "checksum": "5f8e2d3945dee47bc841aa48d74d3119"
+      "checksum": "ab929986dd306cec5b8e42ceac9adeb2"
     },
     "data-cache/rppi.rds": {
       "checksum": "e04bbc7e186ad9c5ca462985ea09235d"
     },
     "data-cache/secovi.rds": {
-      "checksum": "0f42a4c2340c43da940fb4f38ef76159"
+      "checksum": "71d8879280675b3ac5b7299a8c6c6d05"
     },
     "R/_setup.R": {
       "checksum": "edf6d6579a0ef7ddbe2305d3a43464a9"
